@@ -10,7 +10,6 @@ from game import (
     ASTEROID_RADII,
     EXPLOSION_LIFETIME,
     HEIGHT,
-    START_LIVES,
     WIDTH,
     Game,
 )
@@ -20,23 +19,27 @@ ASSETS = Path(__file__).parent / "assets"
 
 # Скорость фонового слоя в пикселях в секунду и его непрозрачность.
 BACKGROUND_SPEED = 27
-BACKGROUND_OPACITY = 90
-BACKGROUND_ROCKS = 30
+BACKGROUND_OPACITY = 100
+BACKGROUND_ROCKS = 54
 
 # Каждая ячейка атласа содержит отдельный кадр анимации взрыва.
 EXPLOSION_FRAMES = 12
 EXPLOSION_TILE = 112
 
-# Заставка находится в центре. Её прямоугольник служит областью клика.
-SPLASH = pygame.Rect(0, 0, 506, 336)
+# Игровое поле справа от подсказок. Заставка в координатах поля.
+FIELD = pygame.Rect(216, 8, WIDTH, HEIGHT)
+WINDOW_SIZE = FIELD.right + 8, FIELD.bottom + 8
+SPLASH = pygame.Rect(0, 0, 400, 300)
 SPLASH.center = WIDTH // 2, HEIGHT // 2
+START_AREA = SPLASH.move(FIELD.topleft)
 
 # Цвета интерфейса.
 WHITE = (239, 247, 255)
-TEXT_SECONDARY = (177, 197, 223)
 CYAN = (117, 224, 252)
-LINE = (53, 76, 106)
-DARK = (9, 18, 34)
+HUD_GREEN = (70, 255, 53)
+WINDOW_COLOR = (240, 240, 240)
+SIDEBAR_TEXT = (36, 43, 55)
+SIDEBAR_BORDER = (163, 170, 180)
 
 
 def _ship_sprite(thrust: bool) -> pygame.Surface:
@@ -166,29 +169,41 @@ def _explosion_atlas() -> pygame.Surface:
     return atlas
 
 
-def _control_legend(font: pygame.font.Font) -> pygame.Surface:
-    """Подписать клавиши управления, рисуя стрелки независимо от шрифта."""
-    legend = pygame.Surface((364, 26), pygame.SRCALPHA)
-    for x, angle in ((2, 180), (28, 0), (151, -90)):
-        pygame.draw.rect(legend, LINE, (x, 2, 23, 22), 1, 4)
-        center = pygame.Vector2(x + 11, 13)
-        tail = center + pygame.Vector2(-5, 0).rotate(angle)
-        tip = center + pygame.Vector2(5, 0).rotate(angle)
-        wing_top = center + pygame.Vector2(1, -4).rotate(angle)
-        wing_bottom = center + pygame.Vector2(1, 4).rotate(angle)
-        pygame.draw.aaline(legend, CYAN, tail, tip)
-        pygame.draw.aalines(legend, CYAN, False, (wing_top, tip, wing_bottom))
-
-    pygame.draw.rect(legend, LINE, (227, 2, 80, 22), 1, 4)
-    for x, label in (
-        (58, "Поворот"),
-        (181, "Тяга"),
-        (235, "Пробел"),
-        (315, "Огонь"),
-    ):
-        text = font.render(label, True, TEXT_SECONDARY)
-        legend.blit(text, text.get_rect(midleft=(x, 13)))
-    return legend
+def _sidebar(font: pygame.font.Font) -> pygame.Surface:
+    """Подготовить панель подсказок слева от игрового поля."""
+    sidebar = pygame.Surface((FIELD.left - 12, HEIGHT)).convert()
+    sidebar.fill(WINDOW_COLOR)
+    width = sidebar.get_width() - 2
+    top = HEIGHT * 2 // 3
+    sections = (
+        (
+            "Управление",
+            (
+                ("W", "Разгон"),
+                ("A", "Поворот влево"),
+                ("D", "Поворот вправо"),
+                ("Пробел", "Выстрел"),
+            ),
+        ),
+        ("Старт", (("", "Щелчок по заставке"),)),
+    )
+    for title, rows in sections:
+        height = 15 + 22 * len(rows)
+        pygame.draw.rect(sidebar, SIDEBAR_BORDER, (1, top, width, height), 1)
+        heading = font.render(title, True, SIDEBAR_TEXT, WINDOW_COLOR)
+        sidebar.blit(heading, heading.get_rect(midleft=(10, top)))
+        for y, (key, label) in enumerate(rows, start=1):
+            row_top = top + 22 * y - 9
+            if key:
+                keycap = pygame.Rect(10, row_top - 2, 55, 18)
+                pygame.draw.rect(sidebar, (226, 230, 236), keycap)
+                pygame.draw.rect(sidebar, SIDEBAR_BORDER, keycap, 1)
+                cap = font.render(key, True, SIDEBAR_TEXT)
+                sidebar.blit(cap, cap.get_rect(center=keycap.center))
+            text = font.render(label, True, SIDEBAR_TEXT)
+            sidebar.blit(text, (73 if key else 10, row_top))
+        top += height + 16
+    return sidebar
 
 
 class Renderer:
@@ -196,7 +211,8 @@ class Renderer:
 
     def __init__(self, surface: pygame.Surface) -> None:
         """Загрузить фон и подготовить спрайты и шрифты."""
-        self.surface = surface
+        self.window = surface
+        self.surface = pygame.Surface((WIDTH, HEIGHT)).convert()
         self.background = pygame.image.load(ASSETS / "nebula.jpg").convert()
         asteroid = pygame.image.load(ASSETS / "asteroid.png").convert_alpha()
         self.asteroids = {
@@ -208,15 +224,11 @@ class Renderer:
         self.ships = (_ship_sprite(False), _ship_sprite(True))
         self.rocket = _rocket_sprite()
         self.explosions = _explosion_atlas()
-        self.label = pygame.font.Font(None, 23)
-        self.value = pygame.font.Font(None, 34)
-        self.title = pygame.font.Font(None, 68)
-        self.button = pygame.font.Font(None, 29)
-        self.hud = pygame.Surface((WIDTH, 84), pygame.SRCALPHA)
-        for y in range(self.hud.get_height()):
-            opacity = round(170 * (1 - y / self.hud.get_height()))
-            pygame.draw.line(self.hud, (*DARK, opacity), (0, y), (WIDTH, y))
-        self.controls = _control_legend(self.label)
+        self.hud = pygame.font.SysFont("arial,liberationsans", 27)
+        self.title = pygame.font.Font(None, 62)
+        self.title.set_italic(True)
+        self.label = pygame.font.Font(None, 24)
+        self.sidebar = _sidebar(pygame.font.Font(None, 17))
         self.panels = {
             (finished, hovered): self._splash_panel(finished, hovered)
             for finished in (False, True)
@@ -263,60 +275,47 @@ class Renderer:
         self._draw_hud(game)
         if not game.playing:
             self.surface.blit(self.panels[game.finished, hovered], SPLASH)
+        self.window.fill(WINDOW_COLOR)
+        pygame.draw.rect(self.window, (52, 52, 55), FIELD.inflate(4, 4), 2)
+        self.window.blit(self.sidebar, (6, FIELD.top))
+        self.window.blit(self.surface, FIELD)
 
     def _draw_hud(self, game: Game) -> None:
         """Нарисовать постоянные индикаторы жизней и очков над полем."""
-        self.surface.blit(self.hud, (0, 0))
-        lives = self.label.render("ЖИЗНИ", True, TEXT_SECONDARY)
-        score = self.label.render("ОЧКИ", True, TEXT_SECONDARY)
-        life_value = self.value.render(str(game.lives), True, WHITE)
-        score_value = self.value.render(str(game.score), True, WHITE)
-        self.surface.blit(lives, (27, 12))
-        self.surface.blit(life_value, (27, 33))
-        self.surface.blit(score, score.get_rect(topright=(WIDTH - 27, 12)))
-        self.surface.blit(
-            score_value, score_value.get_rect(topright=(WIDTH - 27, 33))
-        )
-
-        for index in range(START_LIVES):
-            x = 63 + index * 19
-            points = [(x, 39), (x - 6, 53), (x, 50), (x + 6, 53)]
-            color = CYAN if index < game.lives else LINE
-            pygame.draw.polygon(self.surface, color, points)
+        for caption, alignment in (
+            (f"Lives: {game.lives}", {"topleft": (80, 0)}),
+            (f"Score: {game.score}", {"topright": (WIDTH - 80, 0)}),
+        ):
+            text = self.hud.render(caption, True, HUD_GREEN)
+            shadow = self.hud.render(caption, True, (0, 15, 0))
+            rect = text.get_rect(**alignment)
+            self.surface.blit(shadow, rect.move(1, 1))
+            self.surface.blit(text, rect)
 
     def _splash_panel(self, finished: bool, hovered: bool) -> pygame.Surface:
         """Подготовить центральную панель запуска или повторной игры."""
         panel = pygame.Surface(SPLASH.size, pygame.SRCALPHA)
         center = SPLASH.width // 2
-        opacity = 208 if finished else 240
-        pygame.draw.rect(
-            panel, (*DARK, opacity), panel.get_rect(), border_radius=20
-        )
-        pygame.draw.rect(
-            panel, CYAN if hovered else LINE, panel.get_rect(), 1, 20
-        )
-        emblem = pygame.transform.rotozoom(self.asteroids[26], 20, 0.66)
-        orbit = pygame.Rect(0, 0, 56, 48)
-        orbit.center = center, 61
-        pygame.draw.arc(panel, CYAN, orbit, 0.1, 2.4, 2)
-        pygame.draw.arc(panel, CYAN, orbit, 3.0, 5.3, 2)
-        panel.blit(emblem, emblem.get_rect(center=(center, 61)))
+        panel.fill((15, 25, 77, 157 if hovered else 178))
+        border = (105, 147, 255) if hovered else (51, 76, 163)
+        pygame.draw.rect(panel, border, panel.get_rect(), 3)
 
-        title = self.title.render("Астероиды", True, WHITE)
-        panel.blit(title, title.get_rect(center=(center, 126)))
-        legend = (
-            self.label.render("Раунд завершён", True, TEXT_SECONDARY)
-            if finished
-            else self.controls
-        )
-        panel.blit(legend, legend.get_rect(center=(center, 179)))
+        title = self.title.render("АСТЕРОИДЫ", True, WHITE)
+        outline = self.title.render("АСТЕРОИДЫ", True, (40, 67, 146))
+        rect = title.get_rect(center=(center, 131))
+        for dx, dy in ((-3, 0), (3, 0), (0, -3), (0, 3), (2, 4)):
+            panel.blit(outline, rect.move(dx, dy))
+        panel.blit(title, rect)
+        if finished:
+            status = self.label.render("Раунд завершён", True, WHITE)
+            panel.blit(status, status.get_rect(center=(center, 86)))
 
-        rect = pygame.Rect(0, 0, 244, 52)
-        rect.center = center, 248
-        pygame.draw.rect(
-            panel, (172, 239, 255) if hovered else CYAN, rect, border_radius=9
-        )
-        action = "Играть снова" if finished else "Начать игру"
-        text = self.button.render(action, True, DARK)
-        panel.blit(text, text.get_rect(center=rect.center))
+        action = "ИГРАТЬ СНОВА" if finished else "ЩЁЛКНИТЕ ДЛЯ СТАРТА"
+        text = self.label.render(action, True, CYAN if hovered else WHITE)
+        rect = text.get_rect(center=(center, 190))
+        panel.blit(text, rect)
+        for edge, delta in ((rect.left - 12, -24), (rect.right + 12, 24)):
+            pygame.draw.line(
+                panel, border, (edge, 190), (edge + delta, 190), 2
+            )
         return panel

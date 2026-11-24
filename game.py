@@ -6,8 +6,8 @@ from random import Random
 from pygame.math import Vector2
 
 # Размер тороидального поля в пикселях.
-WIDTH = 960
-HEIGHT = 640
+WIDTH = 800
+HEIGHT = 600
 
 # Число жизней на заставке и в начале каждого раунда.
 START_LIVES = 3
