@@ -283,8 +283,8 @@ class Renderer:
     def _draw_hud(self, game: Game) -> None:
         """Нарисовать постоянные индикаторы жизней и очков над полем."""
         for caption, alignment in (
-            (f"Lives: {game.lives}", {"topleft": (80, 0)}),
-            (f"Score: {game.score}", {"topright": (WIDTH - 80, 0)}),
+            (f"Жизни: {game.lives}", {"topleft": (80, 0)}),
+            (f"Счёт: {game.score}", {"topright": (WIDTH - 80, 0)}),
         ):
             text = self.hud.render(caption, True, HUD_GREEN)
             shadow = self.hud.render(caption, True, (0, 15, 0))

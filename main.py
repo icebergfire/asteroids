@@ -1,5 +1,10 @@
 """Точка входа игры «Астероиды» и главный цикл Pygame."""
 
+import os
+
+# Скрываем англоязычное приветствие Pygame при запуске игры.
+os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+
 import pygame
 
 from game import Game
